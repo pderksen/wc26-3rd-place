@@ -187,6 +187,17 @@ async function fetchProxy(signal){
 
 // (ESPN + web-search fallbacks removed — football-data.org via the Cloudflare Worker is the live source.)
 
+// Relative "how fresh is this" label, e.g. "just now" / "3m ago" / "2h ago".
+function agoLabel(then, nowMs){
+  const s = Math.max(0, Math.round((nowMs - then.getTime())/1000));
+  if(s < 45) return "just now";
+  const m = Math.floor(s/60);
+  if(m < 60) return `${m||1}m ago`;
+  const h = Math.floor(m/60);
+  if(h < 24) return `${h}h ago`;
+  return `${Math.floor(h/24)}d ago`;
+}
+
 // ===== Component =====
 export default function App(){
   const [standings,setStandings] = useState(SEED);
@@ -195,6 +206,7 @@ export default function App(){
   const [loading,setLoading] = useState(false);
   const [auto,setAuto] = useState(true);
   const [err,setErr] = useState("");
+  const [now,setNow] = useState(()=>Date.now()); // ticks so the "updated Xm ago" label stays current
 
   const refresh = useCallback(async ()=>{
     setLoading(true); setErr("");
@@ -210,7 +222,26 @@ export default function App(){
   },[]);
 
   useEffect(()=>{ refresh(); },[refresh]);
-  useEffect(()=>{ if(!auto) return; const id=setInterval(refresh,300000); return ()=>clearInterval(id); },[auto,refresh]);
+
+  // Auto-refresh every 10 min, but only while the tab is actually visible. When it's
+  // hidden nobody's looking, so we pause polling — and refresh once the moment someone
+  // comes back. No background polling when no one's visiting.
+  useEffect(()=>{
+    if(!auto) return;
+    let id;
+    const stop  = ()=>{ if(id){ clearInterval(id); id=null; } };
+    const start = ()=>{ stop(); id=setInterval(refresh, 600000); };
+    const onVisibility = ()=>{
+      if(document.visibilityState === "visible"){ refresh(); start(); }
+      else stop();
+    };
+    if(document.visibilityState === "visible") start(); // initial load already refreshes; just begin polling
+    document.addEventListener("visibilitychange", onVisibility);
+    return ()=>{ stop(); document.removeEventListener("visibilitychange", onVisibility); };
+  },[auto,refresh]);
+
+  // Keep the "updated Xm ago" label ticking (display only — no network).
+  useEffect(()=>{ const id=setInterval(()=>setNow(Date.now()), 30000); return ()=>clearInterval(id); },[]);
 
   const ranked = rankThirds(thirdsFromStandings(standings));
   const {rows, valid} = allocate(ranked);
@@ -248,8 +279,9 @@ export default function App(){
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-60">
               <RefreshCw className={"w-4 h-4 "+(loading?"animate-spin":"")} /> {loading?"Updating":"Refresh"}
             </button>
-            <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 select-none">
-              <input type="checkbox" checked={auto} onChange={e=>setAuto(e.target.checked)} className="accent-emerald-600" /> auto 5m
+            <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 select-none"
+              title="Auto-refresh every 10 min while this tab is open and visible — pauses when the tab is hidden, and refreshes the moment you return.">
+              <input type="checkbox" checked={auto} onChange={e=>setAuto(e.target.checked)} className="accent-emerald-600" /> auto 10m
             </label>
           </div>
         </div>
@@ -258,9 +290,9 @@ export default function App(){
           <span className={"inline-flex items-center gap-1 px-2 py-1 rounded-full font-medium "+srcBadge.cls}>
             <srcBadge.Icon className="w-3 h-3" /> {srcBadge.label}
           </span>
-          <span className="text-slate-500">
-            {isLive ? "data as of " : "captured "}
-            {dataDate ? dataDate.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"}) : "—"}
+          <span className="text-slate-500" title={dataDate ? dataDate.toLocaleString() : ""}>
+            {isLive ? "updated " : "captured "}
+            {dataDate ? agoLabel(dataDate, now) : "—"}
           </span>
           <span className={"inline-flex items-center gap-1 px-2 py-1 rounded-full font-medium "+(valid?"bg-slate-100 text-slate-600":"bg-rose-100 text-rose-700")}>
             {valid ? <><CheckCircle2 className="w-3 h-3"/> Annex C check OK</> : <><AlertTriangle className="w-3 h-3"/> allocation check failed</>}
@@ -387,7 +419,7 @@ export default function App(){
         </div>
 
         <p className="text-[11px] text-slate-400 mt-3 leading-relaxed">
-          Third-placed teams are ranked by points → goal difference → goals scored → team conduct score → FIFA World Ranking (FIFA Regulations Art. 13) — no head-to-head between them (they come from different groups) and no drawing of lots (removed for 2026). Which team finishes 3rd in each group is computed from match results using the within-group tie-breaks (head-to-head first when level on points). R32 pairings from Annex C of the 2026 Regulations (all 495 combinations embedded). Live data: football-data.org via your Cloudflare Worker → snapshot fallback. The "data as of" time is when the Worker last pulled fresh results (held for the 45s cache window). Conduct-score and FIFA-ranking tie-breaks aren't available from the feed and rarely affect the cut.
+          Third-placed teams are ranked by points → goal difference → goals scored → team conduct score → FIFA World Ranking (FIFA Regulations Art. 13) — no head-to-head between them (they come from different groups) and no drawing of lots (removed for 2026). Which team finishes 3rd in each group is computed from match results using the within-group tie-breaks (head-to-head first when level on points). R32 pairings from Annex C of the 2026 Regulations (all 495 combinations embedded). Live data: football-data.org via your Cloudflare Worker → snapshot fallback. The "updated" time is when the Worker last pulled fresh results (cached for 45s); the page itself auto-refreshes every 10 min while open, pausing when the tab is hidden. Conduct-score and FIFA-ranking tie-breaks aren't available from the feed and rarely affect the cut.
         </p>
       </div>
     </div>
