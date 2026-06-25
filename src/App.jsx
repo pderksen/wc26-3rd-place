@@ -116,7 +116,9 @@ I FRA 2 0 0 6 1|I NOR 2 0 0 7 3|I SEN 0 0 2 3 6|I IRQ 0 0 2 1 7
 J ARG 2 0 0 5 0|J AUT 1 0 1 3 3|J DZA 1 0 1 2 4|J JOR 0 0 2 2 5
 K COL 2 0 0 4 1|K POR 1 1 0 6 1|K COD 0 1 1 1 2|K UZB 0 0 2 1 8
 L ENG 1 1 0 4 2|L GHA 1 1 0 1 0|L CRO 1 0 1 3 4|L PAN 0 0 2 0 2`
-  .split("|").map(r => { const p=r.trim().split(/\s+/); return {group:p[0],team:p[1],w:+p[2],d:+p[3],l:+p[4],gf:+p[5],ga:+p[6]}; });
+  // Rows are separated by "|" within a line AND by newlines between lines — split on both.
+  .split(/[\n|]/).map(r => r.trim()).filter(Boolean)
+  .map(r => { const p=r.split(/\s+/); return {group:p[0],team:p[1],w:+p[2],d:+p[3],l:+p[4],gf:+p[5],ga:+p[6]}; });
 
 // ===== Logic =====
 function enrich(row){ const p=row.w+row.d+row.l, pts=row.w*3+row.d, gd=row.gf-row.ga;
@@ -214,6 +216,12 @@ export default function App(){
   const {rows, valid} = allocate(ranked);
   const played = groupPlayed(standings);
   const totalGames = Object.values(played).reduce((a,b)=>a+b,0);
+  // The third-place cut is only final once every group has played all 6 games. Until then,
+  // who's 3rd in each group AND how the 12 thirds rank can both still change — nobody below
+  // the line is actually eliminated yet.
+  const groupsComplete = ALLG.every(g => (played[g]||0) >= 6);
+  const groupsLeft = ALLG.filter(g => (played[g]||0) < 6).length;
+  const cutPts = rows[7]?.pts; // points of the 8th-placed third = the qualifying cut line
   const dataDate = (()=>{ const d=new Date(dataAt); return isNaN(d.getTime()) ? null : d; })();
   const isLive = source==="proxy";
 
@@ -269,10 +277,17 @@ export default function App(){
           <span className="text-slate-600 ml-1 font-semibold">{totalGames}/72 total</span>
         </div>
 
-        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-3 text-xs text-amber-800">
-          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-          <span>Provisional until all 72 group games finish (Jun 27). R32 pairings recompute on every refresh. Within-group order follows FIFA Art. 13 — head-to-head first when level on points, then overall GD → goals — computed live from match results. The eight best third-placed teams are then ranked by points → GD → goals.</span>
-        </div>
+        {groupsComplete ? (
+          <div className="flex items-start gap-2 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2 mb-3 text-xs text-emerald-800">
+            <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+            <span><b>Final.</b> All 72 group games are complete — the eight best third-placed teams (above the line) qualify for the Round of 32; the bottom four are eliminated. Thirds are ranked by points → GD → goals (FIFA Art. 13); R32 pairings from Annex C.</span>
+          </div>
+        ) : (
+          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-3 text-xs text-amber-800">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span><b>Provisional</b> — {groupsLeft} group{groupsLeft===1?"":"s"} still to finish (through Jun 27). Teams below the cut line are <b>not eliminated</b>: they can still climb into the top 8, and who finishes 3rd in each unfinished group can change too. R32 pairings recompute on every refresh. Within-group order follows FIFA Art. 13 — head-to-head first when level on points, then overall GD → goals. The eight best thirds are then ranked by points → GD → goals.</span>
+          </div>
+        )}
 
         <div className="flex items-start gap-2 mb-3 text-[11px] text-slate-500">
           <Clock className="w-3.5 h-3.5 shrink-0 mt-0.5 text-slate-400" />
@@ -299,9 +314,17 @@ export default function App(){
                 </tr>
               </thead>
               <tbody>
-                {rows.map((t,i)=>(
+                {rows.map((t,i)=>{
+                  const out = !t.qual;                          // below the top-8 cut line
+                  const eliminated = out && groupsComplete;     // truly out only once every group is final
+                  const inHunt = out && !groupsComplete;        // provisionally out — still alive
+                  const gap = inHunt && Number.isFinite(cutPts) ? cutPts - t.pts : null;
+                  const rowCls = t.qual ? "bg-emerald-50/60"
+                    : eliminated ? "bg-white text-slate-400"
+                    : "bg-amber-50/50";                          // in the hunt — warm, not greyed out
+                  return (
                   <React.Fragment key={t.g}>
-                    <tr className={(t.qual?"bg-emerald-50/60":"bg-white text-slate-400")+" border-t border-slate-100"}>
+                    <tr className={rowCls+" border-t border-slate-100"}>
                       <td className="px-2 py-2 font-semibold tabular-nums">{i+1}</td>
                       <td className="px-2 py-2 font-bold text-slate-500">{t.g}</td>
                       <td className="px-2 py-2 font-medium whitespace-nowrap">
@@ -319,17 +342,33 @@ export default function App(){
                             vs <b>Winner {t.r32.winner}</b> · M{t.r32.match}
                             {(t.r32.venue || t.r32.date || t.r32.time) && <span className="text-slate-400"> · {[t.r32.venue, [t.r32.date, t.r32.time].filter(Boolean).join(", ")].filter(Boolean).join(" · ")}</span>}
                           </span>
-                        ) : <span className="text-slate-300">eliminated</span>}
+                        ) : eliminated ? (
+                          <span className="text-slate-400">Eliminated</span>
+                        ) : inHunt ? (
+                          <span className="text-slate-500 whitespace-nowrap">
+                            {gap === null ? "in contention" : gap > 0 ? `${gap} pt${gap===1?"":"s"} from the cut` : "level on points with the cut"}
+                          </span>
+                        ) : <span className="text-slate-300">—</span>}
                       </td>
                     </tr>
                     {i===7 && (
                       <tr><td colSpan={10} className="p-0">
-                        <div className="h-[2px] bg-emerald-500" />
-                        <div className="text-[10px] text-center text-emerald-600 font-semibold py-0.5 bg-emerald-50">▲ QUALIFY (top 8) — eliminated below ▼</div>
+                        <div className={"h-[2px] "+(groupsComplete?"bg-emerald-500":"bg-amber-400")} />
+                        {groupsComplete ? (
+                          <div className="text-[10px] text-center font-semibold py-1 text-emerald-700 bg-emerald-50">
+                            ▲ QUALIFIED (top 8) — ELIMINATED below ▼
+                          </div>
+                        ) : (
+                          <div className="bg-amber-50 px-3 py-1.5 text-center">
+                            <span className="text-amber-900 font-bold text-xs uppercase tracking-wide">Still in the hunt</span>
+                            <span className="text-amber-700 text-[11px] ml-1.5">— top 8 above qualify; these can still climb in ({groupsLeft} group{groupsLeft===1?"":"s"} left)</span>
+                          </div>
+                        )}
                       </td></tr>
                     )}
                   </React.Fragment>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

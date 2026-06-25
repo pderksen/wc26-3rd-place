@@ -4,6 +4,7 @@ dist/
 .dev.vars
 *.log
 .DS_Store
+.claude/
 
 # Not committed: a Windows-generated lockfile omits Linux-only optional deps
 # (@emnapi/core, etc.), breaking `npm ci` on Cloudflare's Linux build runners.
