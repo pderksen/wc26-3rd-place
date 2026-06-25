@@ -4,3 +4,8 @@ dist/
 .dev.vars
 *.log
 .DS_Store
+
+# Not committed: a Windows-generated lockfile omits Linux-only optional deps
+# (@emnapi/core, etc.), breaking `npm ci` on Cloudflare's Linux build runners.
+# Without a lockfile, Workers Builds uses `npm install`, which resolves per-platform.
+package-lock.json
