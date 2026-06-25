@@ -1,0 +1,4 @@
+# Local-only secrets for `wrangler dev`. Copy this file to `.dev.vars` (which is
+# gitignored) and paste your token. Get a free key at:
+#   https://www.football-data.org/client/register
+FD_KEY=your_football_data_org_token_here
