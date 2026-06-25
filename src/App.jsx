@@ -188,7 +188,7 @@ export default function App(){
   const [dataAt,setDataAt] = useState(SEED_AT);
   const [source,setSource] = useState("snapshot");
   const [loading,setLoading] = useState(false);
-  const [auto,setAuto] = useState(false);
+  const [auto,setAuto] = useState(true);
   const [err,setErr] = useState("");
 
   const refresh = useCallback(async ()=>{
@@ -205,7 +205,7 @@ export default function App(){
   },[]);
 
   useEffect(()=>{ refresh(); },[refresh]);
-  useEffect(()=>{ if(!auto) return; const id=setInterval(refresh,120000); return ()=>clearInterval(id); },[auto,refresh]);
+  useEffect(()=>{ if(!auto) return; const id=setInterval(refresh,300000); return ()=>clearInterval(id); },[auto,refresh]);
 
   const ranked = rankThirds(thirdsFromStandings(standings));
   const {rows, valid} = allocate(ranked);
@@ -238,7 +238,7 @@ export default function App(){
               <RefreshCw className={"w-4 h-4 "+(loading?"animate-spin":"")} /> {loading?"Updating":"Refresh"}
             </button>
             <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 select-none">
-              <input type="checkbox" checked={auto} onChange={e=>setAuto(e.target.checked)} className="accent-emerald-600" /> auto 2m
+              <input type="checkbox" checked={auto} onChange={e=>setAuto(e.target.checked)} className="accent-emerald-600" /> auto 5m
             </label>
           </div>
         </div>
