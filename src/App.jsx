@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { RefreshCw, Wifi, Database, AlertTriangle, CheckCircle2, Trophy } from "lucide-react";
+import { RefreshCw, Wifi, Database, AlertTriangle, CheckCircle2, Trophy, Clock } from "lucide-react";
 
 // ===== Static reference data =====
 const TEAMS = {
@@ -21,14 +21,17 @@ Object.entries(TEAMS).forEach(([g,l]) => l.forEach(([c,n]) => { NAME[c]=n; GROUP
 
 const COLS = ["A","B","D","E","G","I","K","L"];
 const SLOTS = {
-  A:{match:79,elig:"CEFHI",venue:"Mexico City",date:"Jun 30"},
-  B:{match:85,elig:"EFGIJ",venue:"Vancouver",date:"Jul 2"},
-  D:{match:81,elig:"BEFIJ",venue:"",date:"Jul 2"},
-  E:{match:74,elig:"ABCDF",venue:"Boston",date:"Jun 29"},
-  G:{match:82,elig:"AEHIJ",venue:"",date:"Jul 2"},
-  I:{match:77,elig:"CDFGH",venue:"",date:"Jul 1"},
-  K:{match:87,elig:"DEIJL",venue:"",date:"Jul 3"},
-  L:{match:80,elig:"EHIJK",venue:"",date:"Jul 1"},
+  // Each row is the Round-of-32 match a GROUP WINNER hosts; the 3rd-placed team is the visitor.
+  // venue/date/time are in Pacific Time (PT, UTC-7). The PT date can differ from the venue's local
+  // date and from UTC -- e.g. M81 (USA) is Jul 1 5:00 PM PT = 00:00 UTC Jul 2.
+  A:{match:79,elig:"CEFHI",venue:"Estadio Azteca, Mexico City",    date:"Jun 30",time:"6:00 PM"},
+  B:{match:85,elig:"EFGIJ",venue:"BC Place, Vancouver",            date:"Jul 2", time:"8:00 PM"},
+  D:{match:81,elig:"BEFIJ",venue:"Levi's Stadium, SF Bay Area",    date:"Jul 1", time:"5:00 PM"},
+  E:{match:74,elig:"ABCDF",venue:"Gillette Stadium, Boston",       date:"Jun 29",time:"1:30 PM"},
+  G:{match:82,elig:"AEHIJ",venue:"Lumen Field, Seattle",           date:"Jul 1", time:"1:00 PM"},
+  I:{match:77,elig:"CDFGH",venue:"MetLife Stadium, New York",      date:"Jun 30",time:"2:00 PM"},
+  K:{match:87,elig:"DEIJL",venue:"Arrowhead Stadium, Kansas City", date:"Jul 3", time:"6:30 PM"},
+  L:{match:80,elig:"EHIJK",venue:"Mercedes-Benz Stadium, Atlanta", date:"Jul 1", time:"9:00 AM"},
 };
 
 // FIFA Annex C assignments (495 rows, lexicographic order of the 4 ELIMINATED groups).
@@ -135,7 +138,7 @@ function allocate(ranked){
     const slot = SLOTS[winner];
     const valid = !!slot && slot.elig.includes(t.g) && t.g!==winner;
     if(!valid) allValid = false;
-    return {...t, qual:true, r32:{winner, match:slot?.match, venue:slot?.venue, date:slot?.date, valid}};
+    return {...t, qual:true, r32:{winner, match:slot?.match, venue:slot?.venue, date:slot?.date, time:slot?.time, valid}};
   });
   return {rows:out, valid:allValid};
 }
@@ -271,6 +274,11 @@ export default function App(){
           <span>Provisional until all 72 group games finish (Jun 27). R32 pairings recompute on every refresh. Within-group order follows FIFA Art. 13 — head-to-head first when level on points, then overall GD → goals — computed live from match results. The eight best third-placed teams are then ranked by points → GD → goals.</span>
         </div>
 
+        <div className="flex items-start gap-2 mb-3 text-[11px] text-slate-500">
+          <Clock className="w-3.5 h-3.5 shrink-0 mt-0.5 text-slate-400" />
+          <span>Round-of-32 dates &amp; kickoff times are shown in <b className="text-slate-700">Pacific Time (PT)</b> — which can differ from the venue's local date and from UTC. (USA's M81 is <b>Jul&nbsp;1, 5:00&nbsp;PM&nbsp;PT</b> = 00:00 UTC Jul&nbsp;2.)</span>
+        </div>
+
         {err && <div className="text-xs text-slate-500 mb-3">{err}</div>}
 
         <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
@@ -287,7 +295,7 @@ export default function App(){
                   <th className="px-1.5 py-2 text-center">L</th>
                   <th className="px-1.5 py-2 text-center">GD</th>
                   <th className="px-1.5 py-2 text-center">Pts</th>
-                  <th className="px-2 py-2 text-left">Round of 32</th>
+                  <th className="px-2 py-2 text-left">Round of 32 (PT)</th>
                 </tr>
               </thead>
               <tbody>
@@ -309,7 +317,7 @@ export default function App(){
                         {t.r32 ? (
                           <span className={t.r32.valid?"":"text-rose-600"}>
                             vs <b>Winner {t.r32.winner}</b> · M{t.r32.match}
-                            {(t.r32.venue||t.r32.date) && <span className="text-slate-400"> · {[t.r32.venue,t.r32.date].filter(Boolean).join(" ")}</span>}
+                            {(t.r32.venue || t.r32.date || t.r32.time) && <span className="text-slate-400"> · {[t.r32.venue, [t.r32.date, t.r32.time].filter(Boolean).join(", ")].filter(Boolean).join(" · ")}</span>}
                           </span>
                         ) : <span className="text-slate-300">eliminated</span>}
                       </td>
