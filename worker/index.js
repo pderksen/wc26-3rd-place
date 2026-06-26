@@ -64,7 +64,7 @@ async function handleStandings(request, env, ctx) {
     updated: new Date().toISOString(),                       // moment of this real upstream pull
     source: "football-data.org",
     finished: matches.filter((m) => m.status === "FINISHED").length,
-    live: liveMatches(matches),
+    live: liveMatches(matches, Date.now()),
     teams,
   });
 
@@ -75,15 +75,32 @@ async function handleStandings(request, env, ctx) {
   return new Response(payload, { headers: jsonHeaders("MISS") });
 }
 
-// Currently-running group-stage games (status IN_PLAY or PAUSED), with the live
-// running score. The /matches feed is already group-stage-only (see FD_MATCHES).
-function liveMatches(matches) {
+// Currently-running group-stage games, with the live running score. The /matches
+// feed is already group-stage-only (see FD_MATCHES).
+//
+// We DON'T trust the IN_PLAY/PAUSED status alone: football-data.org's free tier
+// intermittently drops a live match's status back to TIMED for a stretch, which
+// would make a game that's clearly in progress vanish from this list — and with
+// the page only refreshing every 10 min, that gap sticks on screen. So a match
+// counts as live if it has kicked off and isn't finished, within a ~135-min
+// window (90' + stoppage + half-time + buffer). IN_PLAY/PAUSED still drive the
+// displayed badge; the window only decides INCLUSION so concurrent games don't
+// disappear on a flap.
+const LIVE_WINDOW_MS = 135 * 60 * 1000;
+const DONE = new Set(["FINISHED", "POSTPONED", "CANCELLED", "AWARDED"]);
+
+function liveMatches(matches, nowMs) {
   const out = [];
   for (const m of matches) {
-    if (m.status !== "IN_PLAY" && m.status !== "PAUSED") continue;
-    if (!m.group) continue;
+    if (!m.group || DONE.has(m.status)) continue;
     const g = String(m.group).replace(/^GROUP_/, "").trim();
     if (!/^[A-L]$/.test(g)) continue;
+
+    const definitelyLive = m.status === "IN_PLAY" || m.status === "PAUSED" || m.status === "SUSPENDED";
+    const kick = Date.parse(m.utcDate || "");
+    const kickedOff = Number.isFinite(kick) && nowMs >= kick && nowMs < kick + LIVE_WINDOW_MS;
+    if (!definitelyLive && !kickedOff) continue;               // not started, or status is far-future TIMED
+
     const ft = (m.score && m.score.fullTime) || {};
     out.push({
       g,
@@ -91,7 +108,7 @@ function liveMatches(matches) {
       hn: teamName(m.homeTeam), an: teamName(m.awayTeam),
       hs: ft.home == null ? 0 : ft.home,
       as: ft.away == null ? 0 : ft.away,
-      st: m.status,                                          // IN_PLAY | PAUSED (half-time)
+      st: m.status === "PAUSED" ? "PAUSED" : "IN_PLAY",        // collapse TIMED-flap/SUSPENDED to the live badge
     });
   }
   return out;
