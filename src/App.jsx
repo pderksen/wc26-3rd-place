@@ -182,7 +182,7 @@ async function fetchProxy(signal){
   const d = await r.json();
   if(!d.teams || d.teams.length < 24) throw new Error("proxy: insufficient data");
   const st = d.teams.map(x=>({group:x.g, team:x.t, name:x.n, pos:x.pos, w:+x.w, d:+x.d, l:+x.l, gf:+x.gf, ga:+x.ga}));
-  return { st, updated: d.updated };
+  return { st, updated: d.updated, live: Array.isArray(d.live) ? d.live : [] };
 }
 
 // (ESPN + web-search fallbacks removed — football-data.org via the Cloudflare Worker is the live source.)
@@ -202,6 +202,7 @@ function agoLabel(then, nowMs){
 export default function App(){
   const [standings,setStandings] = useState(SEED);
   const [dataAt,setDataAt] = useState(SEED_AT);
+  const [live,setLive] = useState([]);
   const [source,setSource] = useState("snapshot");
   const [loading,setLoading] = useState(false);
   const [auto,setAuto] = useState(true);
@@ -215,8 +216,9 @@ export default function App(){
     try {
       if(!PROXY_URL) throw new Error("no proxy configured");
       const res = await fetchProxy(ctrl.signal);
-      setStandings(res.st); setDataAt(res.updated); setSource("proxy");
+      setStandings(res.st); setDataAt(res.updated); setSource("proxy"); setLive(res.live || []);
     } catch(e){
+      setLive([]);
       setErr("Live refresh unavailable — showing snapshot. Point PROXY_URL at your football-data.org Cloudflare Worker (see wc26-fd-worker.js) for live data.");
     } finally { clearTimeout(to); setLoading(false); }
   },[]);
@@ -417,6 +419,41 @@ export default function App(){
           <span><b className="text-slate-700">M##</b> R32 match no.</span>
           <span><b className="text-slate-700">Winner X</b> winner of Group X</span>
         </div>
+
+        {live.length > 0 && (
+          <div className="mt-5">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500" />
+              </span>
+              <h2 className="text-sm font-semibold text-slate-700">Live now</h2>
+              <span className="text-[11px] text-slate-400">{live.length} game{live.length>1?"s":""} in progress</span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {live.map((m,i)=>(
+                <div key={i} className="bg-white rounded-lg border border-slate-200 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-sm truncate flex-1">
+                      {m.hn||m.h} <span className="text-[11px] text-slate-400">{m.h}</span>
+                    </span>
+                    <span className="font-bold tabular-nums text-sm px-2 shrink-0">{m.hs}<span className="text-slate-300 px-1">–</span>{m.as}</span>
+                    <span className="font-medium text-sm truncate flex-1 text-right">
+                      {m.an||m.a} <span className="text-[11px] text-slate-400">{m.a}</span>
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-center gap-2 mt-1">
+                    <span className={"inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold "+(m.st==="PAUSED"?"bg-slate-100 text-slate-500":"bg-rose-100 text-rose-700")}>
+                      {m.st==="PAUSED" ? "Half-time" : "Live"}
+                    </span>
+                    <span className="text-[10px] text-slate-400">Group {m.g}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1.5">Live scores update on the same refresh as the table (every 10 min, or on Refresh) and can lag the real score by up to ~45s.</p>
+          </div>
+        )}
 
         <p className="text-[11px] text-slate-400 mt-3 leading-relaxed">
           Third-placed teams are ranked by points → goal difference → goals scored → team conduct score → FIFA World Ranking (FIFA Regulations Art. 13) — no head-to-head between them (they come from different groups) and no drawing of lots (removed for 2026). Which team finishes 3rd in each group is computed from match results using the within-group tie-breaks (head-to-head first when level on points). R32 pairings from Annex C of the 2026 Regulations (all 495 combinations embedded). Live data: football-data.org via your Cloudflare Worker → snapshot fallback. The "updated" time is when the Worker last pulled fresh results (cached for 45s); the page itself auto-refreshes every 10 min while open, pausing when the tab is hidden. Conduct-score and FIFA-ranking tie-breaks aren't available from the feed and rarely affect the cut.

@@ -64,6 +64,7 @@ async function handleStandings(request, env, ctx) {
     updated: new Date().toISOString(),                       // moment of this real upstream pull
     source: "football-data.org",
     finished: matches.filter((m) => m.status === "FINISHED").length,
+    live: liveMatches(matches),
     teams,
   });
 
@@ -72,6 +73,28 @@ async function handleStandings(request, env, ctx) {
   })));
 
   return new Response(payload, { headers: jsonHeaders("MISS") });
+}
+
+// Currently-running group-stage games (status IN_PLAY or PAUSED), with the live
+// running score. The /matches feed is already group-stage-only (see FD_MATCHES).
+function liveMatches(matches) {
+  const out = [];
+  for (const m of matches) {
+    if (m.status !== "IN_PLAY" && m.status !== "PAUSED") continue;
+    if (!m.group) continue;
+    const g = String(m.group).replace(/^GROUP_/, "").trim();
+    if (!/^[A-L]$/.test(g)) continue;
+    const ft = (m.score && m.score.fullTime) || {};
+    out.push({
+      g,
+      h: code(m.homeTeam), a: code(m.awayTeam),
+      hn: teamName(m.homeTeam), an: teamName(m.awayTeam),
+      hs: ft.home == null ? 0 : ft.home,
+      as: ft.away == null ? 0 : ft.away,
+      st: m.status,                                          // IN_PLAY | PAUSED (half-time)
+    });
+  }
+  return out;
 }
 
 // ===== FIFA Art. 13 group standings, derived from finished match results =====
